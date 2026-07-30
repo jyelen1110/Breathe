@@ -31,7 +31,7 @@ targets:
     info:
       path: BreatheiOS/Info.plist
       properties:
-        CFBundleDisplayName: Breathe
+        CFBundleDisplayName: Breathe2Relieve
         UILaunchScreen: {}
         NSHealthShareUsageDescription: Breathe reads your heart rate, heart rate variability, resting heart rate, respiratory rate and steps to detect early signs of stress and show your trends.
         NSHealthUpdateUsageDescription: Breathe saves monitoring sessions as workouts so your Watch can measure your heart rate continuously.
@@ -55,7 +55,7 @@ targets:
     info:
       path: BreatheWatch/Info.plist
       properties:
-        CFBundleDisplayName: Breathe
+        CFBundleDisplayName: Breathe2Relieve
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.jyelen.breathe
         WKBackgroundModes:
