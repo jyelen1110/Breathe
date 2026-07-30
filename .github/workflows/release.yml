@@ -1,0 +1,71 @@
+name: Release to TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    name: Archive, sign and upload
+    runs-on: macos-15
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets are configured
+        run: |
+          missing=""
+          [ -z "$APPLE_TEAM_ID" ] && missing="$missing APPLE_TEAM_ID"
+          [ -z "$APPSTORE_KEY_ID" ] && missing="$missing APPSTORE_KEY_ID"
+          [ -z "$APPSTORE_ISSUER_ID" ] && missing="$missing APPSTORE_ISSUER_ID"
+          [ -z "${{ secrets.APPSTORE_P8 }}" ] && missing="$missing APPSTORE_P8"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — see docs/SETUP.md"
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: DEVELOPMENT_TEAM="$APPLE_TEAM_ID" xcodegen generate
+
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "${{ secrets.APPSTORE_P8 }}" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+
+      - name: Archive (cloud-managed signing)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project Breathe.xcodeproj \
+            -scheme BreatheiOS \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Breathe.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8 \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            | tail -n 80
+
+      - name: Prepare export options
+        run: sed "s/__TEAM_ID__/$APPLE_TEAM_ID/" ci/ExportOptions.plist > build/ExportOptions.plist
+
+      - name: Export and upload to TestFlight
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/Breathe.xcarchive \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8 \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
+            | tail -n 80

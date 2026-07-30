@@ -1,0 +1,223 @@
+import Foundation
+import HealthKit
+import CoreMotion
+import Combine
+
+/// Runs the continuous monitoring session ("Work Mode"): an HKWorkoutSession that
+/// streams heart rate every few seconds, combined with pedometer context, feeding
+/// the shared DetectionEngine. Detection runs entirely on-watch so alerts are instant.
+final class WorkModeManager: NSObject, ObservableObject {
+
+    enum Status: Equatable {
+        case idle
+        case starting
+        case running
+        case ended(reason: String?)
+    }
+
+    @Published var status: Status = .idle
+    @Published var currentHR: Double = 0
+    @Published var baselineHR: Double = 72
+    @Published var verdictDescription: String = "—"
+    @Published var lastAlert: StressEpisode?
+    @Published var recentSteps: Int = 0
+    /// Set when a stress alert fires; the root view observes this to offer breathing.
+    @Published var pendingBreathingInvite: Bool = false
+
+    /// Injected by the App on launch.
+    weak var episodeStore: EpisodeStore?
+    weak var phoneLink: PhoneLink?
+
+    private let healthStore = HKHealthStore()
+    private let pedometer = CMPedometer()
+    private var engine = DetectionEngine(settings: DetectionSettings.load())
+    private var session: HKWorkoutSession?
+    private var builder: HKLiveWorkoutBuilder?
+    private var stepTimer: Timer?
+
+    var settings: DetectionSettings {
+        get { engine.settings }
+        set {
+            engine.settings = newValue
+            newValue.save()
+            refreshBaseline()
+        }
+    }
+
+    // MARK: - Session lifecycle
+
+    func start() {
+        guard status == .idle || statusIsEnded else { return }
+        status = .starting
+
+        Task { @MainActor in
+            do {
+                try await HealthAccess.requestAuthorization(store: healthStore)
+                await refreshBaselineAsync()
+                try startWorkoutSession()
+                startStepPolling()
+                status = .running
+            } catch {
+                status = .ended(reason: error.localizedDescription)
+            }
+        }
+    }
+
+    func stop() {
+        session?.end()
+        stepTimer?.invalidate()
+        stepTimer = nil
+        engine.reset()
+        status = .ended(reason: nil)
+    }
+
+    private var statusIsEnded: Bool {
+        if case .ended = status { return true }
+        return false
+    }
+
+    private func startWorkoutSession() throws {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .mindAndBody
+        configuration.locationType = .indoor
+
+        let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+        let builder = session.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+
+        session.delegate = self
+        builder.delegate = self
+
+        session.startActivity(with: Date())
+        builder.beginCollection(withStart: Date()) { _, _ in }
+
+        self.session = session
+        self.builder = builder
+    }
+
+    // MARK: - Baseline
+
+    func refreshBaseline() {
+        Task { @MainActor in await refreshBaselineAsync() }
+    }
+
+    @MainActor
+    private func refreshBaselineAsync() async {
+        let bpmUnit = HKUnit.count().unitDivided(by: .minute())
+        if let resting = await HealthAccess.trailingAverage(
+            store: healthStore, type: .restingHeartRate, unit: bpmUnit, days: 7
+        ) {
+            baselineHR = resting + engine.settings.baselineMarginBPM
+        }
+    }
+
+    // MARK: - Step context
+
+    private func startStepPolling() {
+        updateSteps()
+        stepTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.updateSteps()
+        }
+    }
+
+    private func updateSteps() {
+        guard CMPedometer.isStepCountingAvailable() else { return }
+        let fiveMinutesAgo = Date().addingTimeInterval(-300)
+        pedometer.queryPedometerData(from: fiveMinutesAgo, to: Date()) { [weak self] data, _ in
+            DispatchQueue.main.async {
+                self?.recentSteps = data?.numberOfSteps.intValue ?? 0
+            }
+        }
+    }
+
+    // MARK: - Detection
+
+    private func handleHeartRate(bpm: Double) {
+        DispatchQueue.main.async { [self] in
+            currentHR = bpm
+            let verdict = engine.process(
+                bpm: bpm,
+                at: Date(),
+                baselineHR: baselineHR,
+                stepsLastFiveMinutes: recentSteps
+            )
+            switch verdict {
+            case .calm:
+                verdictDescription = "Calm"
+            case .active:
+                verdictDescription = "Active"
+            case .elevated(let since):
+                let minutes = max(1, Int(Date().timeIntervalSince(since) / 60))
+                verdictDescription = "Elevated \(minutes)m"
+            case .alert(let signal):
+                verdictDescription = "Stress detected"
+                fireAlert(for: signal)
+            }
+        }
+    }
+
+    private func fireAlert(for signal: DetectionEngine.StressSignal) {
+        let episode = StressEpisode(
+            id: UUID(),
+            startedAt: signal.startedAt,
+            detectedAt: signal.detectedAt,
+            averageHR: signal.averageHR,
+            baselineHR: signal.baselineHR,
+            stepsLastFiveMinutes: signal.stepsLastFiveMinutes,
+            resolution: nil
+        )
+        lastAlert = episode
+        pendingBreathingInvite = true
+        episodeStore?.add(episode)
+        phoneLink?.send(episode: episode)
+        AlertCenter.shared.notifyStress(episode: episode)
+    }
+
+    func resolveLastAlert(_ resolution: StressEpisode.Resolution) {
+        guard var episode = lastAlert else { return }
+        episode.resolution = resolution
+        lastAlert = episode
+        episodeStore?.add(episode)
+        phoneLink?.send(episode: episode)
+        pendingBreathingInvite = false
+    }
+}
+
+// MARK: - HKWorkoutSessionDelegate
+
+extension WorkModeManager: HKWorkoutSessionDelegate {
+    func workoutSession(
+        _ workoutSession: HKWorkoutSession,
+        didChangeTo toState: HKWorkoutSessionState,
+        from fromState: HKWorkoutSessionState,
+        date: Date
+    ) {
+        if toState == .ended {
+            builder?.endCollection(withEnd: date) { [weak self] _, _ in
+                self?.builder?.finishWorkout { _, _ in }
+            }
+        }
+    }
+
+    func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
+        DispatchQueue.main.async {
+            self.status = .ended(reason: error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - HKLiveWorkoutBuilderDelegate
+
+extension WorkModeManager: HKLiveWorkoutBuilderDelegate {
+    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
+        let heartRateType = HKQuantityType(.heartRate)
+        guard collectedTypes.contains(heartRateType),
+              let statistics = workoutBuilder.statistics(for: heartRateType),
+              let quantity = statistics.mostRecentQuantity()
+        else { return }
+        let bpm = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+        handleHeartRate(bpm: bpm)
+    }
+
+    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+}

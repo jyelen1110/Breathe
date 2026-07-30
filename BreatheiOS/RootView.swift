@@ -1,0 +1,116 @@
+import SwiftUI
+
+struct RootView: View {
+    var body: some View {
+        TabView {
+            TodayView()
+                .tabItem { Label("Today", systemImage: "sun.max") }
+            HistoryView()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+            GuideView()
+                .tabItem { Label("Guide", systemImage: "book") }
+        }
+        .tint(.teal)
+    }
+}
+
+struct TodayView: View {
+    @EnvironmentObject private var health: HealthDashboardModel
+    @EnvironmentObject private var episodeStore: EpisodeStore
+
+    private var todayEpisodes: [StressEpisode] {
+        episodeStore.episodes(onSameDayAs: Date())
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !health.isAuthorized {
+                    Section {
+                        Button {
+                            Task { await health.requestAuthorization() }
+                        } label: {
+                            Label("Connect Apple Health", systemImage: "heart.text.square")
+                        }
+                        Text("Breathe needs Health access to learn your personal baseline.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Your signals") {
+                    metricRow(
+                        "Resting heart rate",
+                        value: health.restingHR.map { "\(Int($0)) bpm" },
+                        symbol: "heart.fill", color: .red
+                    )
+                    metricRow(
+                        "Baseline (alert reference)",
+                        value: health.baselineEstimate.map { "\(Int($0)) bpm" },
+                        symbol: "gauge.with.needle", color: .teal
+                    )
+                    metricRow(
+                        "HRV (SDNN)",
+                        value: health.hrvSDNN.map { "\(Int($0)) ms" },
+                        symbol: "waveform.path.ecg", color: .purple
+                    )
+                    metricRow(
+                        "Respiratory rate",
+                        value: health.respiratoryRate.map { String(format: "%.1f /min", $0) },
+                        symbol: "lungs.fill", color: .blue
+                    )
+                }
+
+                Section("Today") {
+                    if todayEpisodes.isEmpty {
+                        Text("No stress episodes detected today.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(todayEpisodes) { episode in
+                            EpisodeRow(episode: episode)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Breathe")
+            .refreshable { await health.refresh() }
+            .task {
+                if health.isAuthorized { await health.refresh() }
+            }
+        }
+    }
+
+    private func metricRow(_ title: String, value: String?, symbol: String, color: Color) -> some View {
+        HStack {
+            Label(title, systemImage: symbol)
+                .foregroundStyle(color)
+                .font(.subheadline)
+            Spacer()
+            Text(value ?? "--")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct GuideView: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("How detection works") {
+                    Text("Start Work Mode on your Watch during busy periods. It measures your heart rate every few seconds and compares it with your personal baseline (7-day resting heart rate plus a margin). If it stays elevated while you're sitting still, you get a haptic tap and a suggestion to breathe — usually within a few minutes of the stress beginning.")
+                }
+                Section("Why the steps matter") {
+                    Text("A raised heart rate from walking or stairs is normal. Breathe only alerts when your heart rate is high and you've barely moved — the signature of mental stress, not exercise.")
+                }
+                Section("Tuning") {
+                    Text("If you get too many alerts, raise the threshold or the sustain time in the Watch settings. Too few, lower them. Give the baseline a week or two of data before judging accuracy.")
+                }
+                Section("Battery") {
+                    Text("Work Mode uses the workout sensor, which costs battery — expect a noticeably faster drain than normal wear. Start it for your working blocks rather than the whole day, and charge nightly.")
+                }
+            }
+            .navigationTitle("Guide")
+        }
+    }
+}
