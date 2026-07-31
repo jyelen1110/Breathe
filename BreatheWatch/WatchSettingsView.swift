@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WatchSettingsView: View {
     @EnvironmentObject private var workMode: WorkModeManager
+    @EnvironmentObject private var phoneLink: PhoneLink
     @State private var settings = DetectionSettings.load()
     @State private var schedule = MonitoringSchedule.load()
 
@@ -60,6 +61,11 @@ struct WatchSettingsView: View {
             schedule = normalized
             normalized.save()
             ScheduleManager.apply(normalized)
+            phoneLink.send(schedule: normalized)
+        }
+        .onAppear {
+            // Pick up any change synced from the iPhone while this view was closed.
+            schedule = MonitoringSchedule.load()
         }
     }
 

@@ -7,6 +7,8 @@ struct RootView: View {
                 .tabItem { Label("Today", systemImage: "sun.max") }
             HistoryView()
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+            ScheduleView()
+                .tabItem { Label("Schedule", systemImage: "calendar.badge.clock") }
             GuideView()
                 .tabItem { Label("Guide", systemImage: "book") }
         }

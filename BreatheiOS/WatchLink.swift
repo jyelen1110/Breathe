@@ -11,6 +11,16 @@ final class WatchLink: NSObject, ObservableObject {
         session.delegate = self
         session.activate()
     }
+
+    /// Pushes the latest schedule to the Watch, which applies its reminders.
+    func send(schedule: MonitoringSchedule) {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        guard session.activationState == .activated,
+              let data = try? JSONEncoder().encode(schedule)
+        else { return }
+        try? session.updateApplicationContext(["schedule": data])
+    }
 }
 
 extension WatchLink: WCSessionDelegate {
@@ -34,4 +44,18 @@ extension WatchLink: WCSessionDelegate {
             self?.episodeStore?.add(episode)
         }
     }
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        guard let data = applicationContext["schedule"] as? Data,
+              let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
+        else { return }
+        DispatchQueue.main.async {
+            schedule.save()
+            NotificationCenter.default.post(name: .scheduleSynced, object: nil)
+        }
+    }
+}
+
+extension Notification.Name {
+    static let scheduleSynced = Notification.Name("scheduleSynced")
 }

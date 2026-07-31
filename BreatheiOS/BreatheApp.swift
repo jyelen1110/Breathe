@@ -11,6 +11,7 @@ struct BreatheApp: App {
             RootView()
                 .environmentObject(episodeStore)
                 .environmentObject(health)
+                .environmentObject(watchLink)
                 .onAppear {
                     watchLink.episodeStore = episodeStore
                     watchLink.activate()

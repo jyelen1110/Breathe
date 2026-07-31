@@ -55,6 +55,49 @@ struct StressEpisode: Codable, Identifiable, Equatable {
     }
 }
 
+/// User-configured monitoring window, shared between iPhone (editing UI) and
+/// Watch (reminder notifications + auto-stop). Synced via WatchConnectivity
+/// application context; each device also persists its own copy.
+struct MonitoringSchedule: Codable, Equatable {
+    var enabled = false
+    /// Calendar weekday numbers: 1 = Sunday … 7 = Saturday. Default Tue–Sun
+    /// (the user's working days).
+    var weekdays: Set<Int> = [1, 3, 4, 5, 6, 7]
+    /// Window bounds in minutes since midnight, 15-minute granularity.
+    var startMinutes = 11 * 60 + 30
+    var endMinutes = 15 * 60 + 45
+
+    var startTimeText: String { Self.timeText(startMinutes) }
+    var endTimeText: String { Self.timeText(endMinutes) }
+
+    static func timeText(_ minutes: Int) -> String {
+        String(format: "%d:%02d", minutes / 60, minutes % 60)
+    }
+
+    static let storageKey = "monitoringSchedule.v1"
+
+    static func load(from defaults: UserDefaults = .standard) -> MonitoringSchedule {
+        guard let data = defaults.data(forKey: storageKey),
+              let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
+        else { return MonitoringSchedule() }
+        return schedule
+    }
+
+    func save(to defaults: UserDefaults = .standard) {
+        if let data = try? JSONEncoder().encode(self) {
+            defaults.set(data, forKey: Self.storageKey)
+        }
+    }
+
+    func isActiveDay(_ date: Date, calendar: Calendar = .current) -> Bool {
+        weekdays.contains(calendar.component(.weekday, from: date))
+    }
+
+    func endDate(onSameDayAs date: Date, calendar: Calendar = .current) -> Date? {
+        calendar.date(bySettingHour: endMinutes / 60, minute: endMinutes % 60, second: 0, of: date)
+    }
+}
+
 /// User-tunable detection settings, persisted in UserDefaults on each device.
 struct DetectionSettings: Codable, Equatable {
     /// Alert when heart rate sits this fraction above baseline (0.16 = 16%).

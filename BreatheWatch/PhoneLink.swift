@@ -18,6 +18,14 @@ final class PhoneLink: NSObject, ObservableObject {
         // transferUserInfo queues delivery, surviving the phone being out of reach.
         session.transferUserInfo(["episode": episode.dictionaryRepresentation])
     }
+
+    /// Pushes the latest schedule to the iPhone so both editors stay in sync.
+    func send(schedule: MonitoringSchedule) {
+        guard let session, session.activationState == .activated,
+              let data = try? JSONEncoder().encode(schedule)
+        else { return }
+        try? session.updateApplicationContext(["schedule": data])
+    }
 }
 
 extension PhoneLink: WCSessionDelegate {
@@ -26,4 +34,14 @@ extension PhoneLink: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {}
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        guard let data = applicationContext["schedule"] as? Data,
+              let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
+        else { return }
+        DispatchQueue.main.async {
+            schedule.save()
+            ScheduleManager.apply(schedule)
+        }
+    }
 }
