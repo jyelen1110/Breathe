@@ -21,6 +21,8 @@ final class WorkModeManager: NSObject, ObservableObject {
     @Published var verdictDescription: String = "—"
     @Published var lastAlert: StressEpisode?
     @Published var recentSteps: Int = 0
+    /// nil = unknown, true = Health data flowing, false = access missing or no data.
+    @Published var healthConnected: Bool?
     /// Set when a stress alert fires; the root view observes this to offer breathing.
     @Published var pendingBreathingInvite: Bool = false
 
@@ -123,11 +125,19 @@ final class WorkModeManager: NSObject, ObservableObject {
 
     @MainActor
     private func refreshBaselineAsync() async {
+        let status = await HealthAccess.authorizationRequestStatus(store: healthStore)
+        guard status != .shouldRequest else {
+            healthConnected = false
+            return
+        }
         let bpmUnit = HKUnit.count().unitDivided(by: .minute())
         if let resting = await HealthAccess.trailingAverage(
             store: healthStore, type: .restingHeartRate, unit: bpmUnit, days: 7
         ) {
             baselineHR = resting + engine.settings.baselineMarginBPM
+            healthConnected = true
+        } else {
+            healthConnected = false
         }
     }
 

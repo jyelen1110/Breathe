@@ -23,6 +23,17 @@ enum HealthAccess {
         try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
     }
 
+    /// Whether the app still needs to show the authorization sheet. Note: HealthKit
+    /// never reveals whether *read* access was granted — only whether we've asked.
+    /// "Connected" is therefore proven by actually receiving data.
+    static func authorizationRequestStatus(store: HKHealthStore) async -> HKAuthorizationRequestStatus {
+        await withCheckedContinuation { continuation in
+            store.getRequestStatusForAuthorization(toShare: shareTypes, read: readTypes) { status, _ in
+                continuation.resume(returning: status)
+            }
+        }
+    }
+
     /// Average of a quantity over the trailing `days`, in the given unit.
     /// Used for resting HR (baseline anchor) and HRV/respiratory context.
     static func trailingAverage(

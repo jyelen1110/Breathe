@@ -25,16 +25,14 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             List {
-                if !health.isAuthorized {
-                    Section {
+                Section {
+                    connectionStatusRow
+                    if health.connection == .notConnected {
                         Button {
                             Task { await health.requestAuthorization() }
                         } label: {
                             Label("Connect Apple Health", systemImage: "heart.text.square")
                         }
-                        Text("Breathe needs Health access to learn your personal baseline.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -73,10 +71,37 @@ struct TodayView: View {
                 }
             }
             .navigationTitle("Breathe")
-            .refreshable { await health.refresh() }
-            .task {
-                if health.isAuthorized { await health.refresh() }
-            }
+            .refreshable { await health.evaluateConnection() }
+            .task { await health.evaluateConnection() }
+        }
+    }
+
+    private var connectionStatusRow: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 10, height: 10)
+            Text(statusText)
+                .font(.subheadline)
+            Spacer()
+        }
+    }
+
+    private var statusColor: Color {
+        switch health.connection {
+        case .checking: return .gray
+        case .connected: return .green
+        case .connectedNoData: return .orange
+        case .notConnected: return .red
+        }
+    }
+
+    private var statusText: String {
+        switch health.connection {
+        case .checking: return "Checking Apple Health…"
+        case .connected: return "Apple Health connected"
+        case .connectedNoData: return "Connected, but no data — check permissions in the Health app"
+        case .notConnected: return "Apple Health not connected"
         }
     }
 

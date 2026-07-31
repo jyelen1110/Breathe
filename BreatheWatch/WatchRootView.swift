@@ -55,9 +55,22 @@ struct WatchRootView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Text("Baseline \(Int(workMode.baselineHR)) bpm")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(healthDotColor)
+                    .frame(width: 6, height: 6)
+                Text("Baseline \(Int(workMode.baselineHR)) bpm")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var healthDotColor: Color {
+        switch workMode.healthConnected {
+        case .some(true): return .green
+        case .some(false): return .orange
+        case nil: return .gray
         }
     }
 
