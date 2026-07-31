@@ -23,7 +23,7 @@ struct MonitoringSchedule: Codable, Equatable {
 
     func save(to defaults: UserDefaults = .standard) {
         if let data = try? JSONEncoder().encode(self) {
-            defaults.set(data, forKey: storageKey)
+            defaults.set(data, forKey: Self.storageKey)
         }
     }
 
