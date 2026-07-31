@@ -28,6 +28,9 @@ struct WatchRootView: View {
         .onChange(of: workMode.pendingBreathingInvite) { _, invited in
             if invited { showBreathing = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .workModeReminderTapped)) { _ in
+            workMode.start()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .stressAlertAction)) { note in
             guard let action = note.userInfo?["action"] as? String else { return }
             if action == "BREATHE" {

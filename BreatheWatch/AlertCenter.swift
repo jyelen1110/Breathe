@@ -28,7 +28,18 @@ final class AlertCenter: NSObject {
             actions: [breathe, dismiss],
             intentIdentifiers: []
         )
-        center.setNotificationCategories([category])
+
+        let startWork = UNNotificationAction(
+            identifier: ScheduleManager.startActionIdentifier,
+            title: "Start Work Mode",
+            options: [.foreground]
+        )
+        let workReminder = UNNotificationCategory(
+            identifier: ScheduleManager.categoryIdentifier,
+            actions: [startWork],
+            intentIdentifiers: []
+        )
+        center.setNotificationCategories([category, workReminder])
     }
 
     func notifyStress(episode: StressEpisode) {
@@ -64,15 +75,23 @@ extension AlertCenter: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        NotificationCenter.default.post(
-            name: .stressAlertAction,
-            object: nil,
-            userInfo: ["action": response.actionIdentifier]
-        )
+        let category = response.notification.request.content.categoryIdentifier
+        if category == ScheduleManager.categoryIdentifier {
+            // Reminder tapped (either the action button or the notification body):
+            // both open the app, so start monitoring right away.
+            NotificationCenter.default.post(name: .workModeReminderTapped, object: nil)
+        } else {
+            NotificationCenter.default.post(
+                name: .stressAlertAction,
+                object: nil,
+                userInfo: ["action": response.actionIdentifier]
+            )
+        }
         completionHandler()
     }
 }
 
 extension Notification.Name {
     static let stressAlertAction = Notification.Name("stressAlertAction")
+    static let workModeReminderTapped = Notification.Name("workModeReminderTapped")
 }

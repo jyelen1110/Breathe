@@ -34,6 +34,7 @@ final class WorkModeManager: NSObject, ObservableObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var stepTimer: Timer?
+    private var autoStopTimer: Timer?
 
     var settings: DetectionSettings {
         get { engine.settings }
@@ -56,6 +57,7 @@ final class WorkModeManager: NSObject, ObservableObject {
                 await refreshBaselineAsync()
                 try startWorkoutSession()
                 startStepPolling()
+                scheduleAutoStopIfNeeded()
                 status = .running
             } catch {
                 status = .ended(reason: error.localizedDescription)
@@ -67,8 +69,26 @@ final class WorkModeManager: NSObject, ObservableObject {
         session?.end()
         stepTimer?.invalidate()
         stepTimer = nil
+        autoStopTimer?.invalidate()
+        autoStopTimer = nil
         engine.reset()
         status = .ended(reason: nil)
+    }
+
+    /// If a monitoring schedule is enabled and today is a scheduled day, end the
+    /// session automatically at the window's end time. The workout session keeps
+    /// the app alive in the background, so the timer fires reliably.
+    private func scheduleAutoStopIfNeeded() {
+        autoStopTimer?.invalidate()
+        let schedule = MonitoringSchedule.load()
+        guard schedule.enabled,
+              schedule.isActiveDay(Date()),
+              let end = schedule.endDate(onSameDayAs: Date()),
+              end > Date()
+        else { return }
+        autoStopTimer = Timer.scheduledTimer(withTimeInterval: end.timeIntervalSinceNow, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async { self?.stop() }
+        }
     }
 
     private var statusIsEnded: Bool {

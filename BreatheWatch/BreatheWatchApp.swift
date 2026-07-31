@@ -17,6 +17,7 @@ struct BreatheWatchApp: App {
                     workMode.phoneLink = phoneLink
                     phoneLink.activate()
                     AlertCenter.shared.configure()
+                    ScheduleManager.apply(MonitoringSchedule.load())
                 }
         }
     }
