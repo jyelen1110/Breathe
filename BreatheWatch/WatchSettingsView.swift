@@ -12,12 +12,12 @@ struct WatchSettingsView: View {
             Section("Schedule") {
                 Toggle("Daily reminder", isOn: $schedule.enabled)
                 if schedule.enabled {
-                    Stepper(value: $schedule.startHour, in: 0...22) {
-                        Text("Starts \(schedule.startHour):00")
+                    Stepper(value: $schedule.startMinutes, in: 0...(23 * 60), step: 15) {
+                        Text("Starts \(schedule.startTimeText)")
                             .font(.footnote)
                     }
-                    Stepper(value: $schedule.endHour, in: 1...23) {
-                        Text("Auto-stops \(schedule.endHour):00")
+                    Stepper(value: $schedule.endMinutes, in: 15...(23 * 60 + 45), step: 15) {
+                        Text("Auto-stops \(schedule.endTimeText)")
                             .font(.footnote)
                     }
                     ForEach(1...7, id: \.self) { weekday in
@@ -54,8 +54,8 @@ struct WatchSettingsView: View {
         }
         .onChange(of: schedule) { _, updated in
             var normalized = updated
-            if normalized.endHour <= normalized.startHour {
-                normalized.endHour = min(normalized.startHour + 1, 23)
+            if normalized.endMinutes <= normalized.startMinutes {
+                normalized.endMinutes = min(normalized.startMinutes + 15, 23 * 60 + 45)
             }
             schedule = normalized
             normalized.save()

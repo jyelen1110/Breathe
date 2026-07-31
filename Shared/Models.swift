@@ -57,8 +57,10 @@ struct StressEpisode: Codable, Identifiable, Equatable {
 
 /// User-tunable detection settings, persisted in UserDefaults on each device.
 struct DetectionSettings: Codable, Equatable {
-    /// Alert when heart rate sits this fraction above baseline (0.18 = 18%).
-    var elevationFraction: Double = 0.18
+    /// Alert when heart rate sits this fraction above baseline (0.16 = 16%).
+    /// Tuned from the user's Health export: sedentary median 68 bpm, p95 80 bpm
+    /// in the monitored window, so threshold ≈ 79 bpm.
+    var elevationFraction: Double = 0.16
     /// Elevation must be sustained this long before alerting.
     var sustainSeconds: TimeInterval = 180
     /// Step count above this in the last 5 minutes counts as "moving", which suppresses alerts.
@@ -66,7 +68,8 @@ struct DetectionSettings: Codable, Equatable {
     /// Minimum quiet period between alerts.
     var cooldownSeconds: TimeInterval = 1200
     /// Added to your resting heart rate to form the baseline when no learned data exists.
-    var baselineMarginBPM: Double = 12
+    /// Tuned so resting (~52 bpm) + margin lands on the user's sedentary median (~68 bpm).
+    var baselineMarginBPM: Double = 16
 
     static let storageKey = "detectionSettings.v1"
 

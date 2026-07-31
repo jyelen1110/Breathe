@@ -7,10 +7,19 @@ import UserNotifications
 /// session stops itself automatically at the end time.
 struct MonitoringSchedule: Codable, Equatable {
     var enabled = false
-    /// Calendar weekday numbers: 1 = Sunday … 7 = Saturday. Default Mon–Fri.
-    var weekdays: Set<Int> = [2, 3, 4, 5, 6]
-    var startHour = 9
-    var endHour = 17
+    /// Calendar weekday numbers: 1 = Sunday … 7 = Saturday. Default Tue–Sun
+    /// (the user's working days).
+    var weekdays: Set<Int> = [1, 3, 4, 5, 6, 7]
+    /// Window bounds in minutes since midnight, 15-minute granularity.
+    var startMinutes = 11 * 60 + 30
+    var endMinutes = 15 * 60 + 45
+
+    var startTimeText: String { Self.timeText(startMinutes) }
+    var endTimeText: String { Self.timeText(endMinutes) }
+
+    static func timeText(_ minutes: Int) -> String {
+        String(format: "%d:%02d", minutes / 60, minutes % 60)
+    }
 
     static let storageKey = "monitoringSchedule.v1"
 
@@ -32,7 +41,7 @@ struct MonitoringSchedule: Codable, Equatable {
     }
 
     func endDate(onSameDayAs date: Date, calendar: Calendar = .current) -> Date? {
-        calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: date)
+        calendar.date(bySettingHour: endMinutes / 60, minute: endMinutes % 60, second: 0, of: date)
     }
 }
 
@@ -53,12 +62,12 @@ enum ScheduleManager {
         for weekday in schedule.weekdays {
             var components = DateComponents()
             components.weekday = weekday
-            components.hour = schedule.startHour
-            components.minute = 0
+            components.hour = schedule.startMinutes / 60
+            components.minute = schedule.startMinutes % 60
 
             let content = UNMutableNotificationContent()
             content.title = "Work Mode time"
-            content.body = "Tap to start stress monitoring until \(schedule.endHour):00."
+            content.body = "Tap to start stress monitoring until \(schedule.endTimeText)."
             content.categoryIdentifier = categoryIdentifier
             content.sound = .default
 
