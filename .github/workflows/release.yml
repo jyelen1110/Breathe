@@ -37,11 +37,12 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "${{ secrets.APPSTORE_P8 }}" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      # Archive unsigned: signing happens once, at export, with the cloud-managed
-      # distribution certificate. Signing the archive too would mint a throwaway
-      # development certificate on every ephemeral runner until the account hits
-      # Apple's certificate cap.
-      - name: Archive (unsigned)
+      # Sign the archive with the cloud-managed DISTRIBUTION identity directly.
+      # Default automatic signing would mint a throwaway development certificate
+      # on every ephemeral runner (the account eventually hits Apple's cert cap),
+      # and a fully unsigned archive loses the HealthKit entitlement the watch
+      # app's workout-processing background mode requires.
+      - name: Archive (distribution cloud signing)
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -49,9 +50,13 @@ jobs:
             -scheme BreatheiOS \
             -destination 'generic/platform=iOS' \
             -archivePath build/Breathe.xcarchive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8 \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             | tail -n 80
 
