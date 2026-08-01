@@ -43,6 +43,16 @@ final class WorkModeManager: NSObject, ObservableObject {
     private var stepTimer: Timer?
     private var autoStopTimer: Timer?
 
+    /// Share/write status IS queryable (unlike read) — shown in Diagnostics.
+    var workoutWriteDescription: String {
+        switch healthStore.authorizationStatus(for: HKObjectType.workoutType()) {
+        case .sharingAuthorized: return "Allowed"
+        case .sharingDenied: return "DENIED — enable in Health app"
+        case .notDetermined: return "Not asked yet"
+        @unknown default: return "Unknown"
+        }
+    }
+
     var settings: DetectionSettings {
         get { engine.settings }
         set {
@@ -61,6 +71,13 @@ final class WorkModeManager: NSObject, ObservableObject {
         Task { @MainActor in
             do {
                 try await HealthAccess.requestAuthorization(store: healthStore)
+                // The continuous HR stream runs as a workout session, which requires
+                // write access to Workouts. Without it, collection silently no-ops —
+                // so refuse loudly instead.
+                guard healthStore.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized else {
+                    status = .ended(reason: "Turn on Workouts under 'write' for this app: iPhone Health app → profile → Apps & Services")
+                    return
+                }
                 await refreshBaselineAsync()
                 try startWorkoutSession()
                 startStepPolling()
@@ -129,7 +146,13 @@ final class WorkModeManager: NSObject, ObservableObject {
         builder.delegate = self
 
         session.startActivity(with: Date())
-        builder.beginCollection(withStart: Date()) { _, _ in }
+        builder.beginCollection(withStart: Date()) { [weak self] success, error in
+            DispatchQueue.main.async {
+                if !success {
+                    self?.status = .ended(reason: error?.localizedDescription ?? "Sensor collection failed to start")
+                }
+            }
+        }
 
         self.session = session
         self.builder = builder

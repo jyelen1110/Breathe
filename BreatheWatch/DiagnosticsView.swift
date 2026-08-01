@@ -37,6 +37,7 @@ struct DiagnosticsView: View {
                 row("Current HR", workMode.currentHR > 0 ? "\(Int(workMode.currentHR)) bpm" : "--")
                 row("Baseline", "\(Int(workMode.baselineHR)) bpm")
                 row("Health", healthText)
+                row("Workout write", workMode.workoutWriteDescription)
             }
         }
         .navigationTitle("Diagnostics")
