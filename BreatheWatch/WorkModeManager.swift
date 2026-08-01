@@ -23,6 +23,11 @@ final class WorkModeManager: NSObject, ObservableObject {
     @Published var recentSteps: Int = 0
     /// nil = unknown, true = Health data flowing, false = access missing or no data.
     @Published var healthConnected: Bool?
+    /// Heart-rate readings received in the current session — live proof the sensor works.
+    @Published var sampleCount = 0
+    @Published var lastSampleAt: Date?
+
+    private var sessionStartedAt: Date?
     /// Set when a stress alert fires; the root view observes this to offer breathing.
     @Published var pendingBreathingInvite: Bool = false
 
@@ -60,6 +65,9 @@ final class WorkModeManager: NSObject, ObservableObject {
                 try startWorkoutSession()
                 startStepPolling()
                 scheduleAutoStopIfNeeded()
+                sampleCount = 0
+                lastSampleAt = nil
+                sessionStartedAt = Date()
                 status = .running
             } catch {
                 status = .ended(reason: error.localizedDescription)
@@ -68,6 +76,16 @@ final class WorkModeManager: NSObject, ObservableObject {
     }
 
     func stop() {
+        if let started = sessionStartedAt {
+            let summary = MonitoringSummary(
+                id: UUID(),
+                startedAt: started,
+                endedAt: Date(),
+                sampleCount: sampleCount
+            )
+            sessionStartedAt = nil
+            phoneLink?.send(summary: summary)
+        }
         session?.end()
         stepTimer?.invalidate()
         stepTimer = nil
@@ -165,6 +183,8 @@ final class WorkModeManager: NSObject, ObservableObject {
     private func handleHeartRate(bpm: Double) {
         DispatchQueue.main.async { [self] in
             currentHR = bpm
+            sampleCount += 1
+            lastSampleAt = Date()
             let verdict = engine.process(
                 bpm: bpm,
                 at: Date(),

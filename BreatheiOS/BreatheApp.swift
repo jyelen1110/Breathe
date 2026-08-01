@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BreatheApp: App {
     @StateObject private var episodeStore = EpisodeStore()
+    @StateObject private var summaryStore = SummaryStore()
     @StateObject private var watchLink = WatchLink()
     @StateObject private var health = HealthDashboardModel()
 
@@ -10,10 +11,12 @@ struct BreatheApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(episodeStore)
+                .environmentObject(summaryStore)
                 .environmentObject(health)
                 .environmentObject(watchLink)
                 .onAppear {
                     watchLink.episodeStore = episodeStore
+                    watchLink.summaryStore = summaryStore
                     watchLink.activate()
                 }
         }

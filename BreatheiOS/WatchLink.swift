@@ -4,6 +4,7 @@ import WatchConnectivity
 /// iPhone-side WatchConnectivity: receives episodes pushed from the Watch.
 final class WatchLink: NSObject, ObservableObject {
     weak var episodeStore: EpisodeStore?
+    weak var summaryStore: SummaryStore?
 
     func activate() {
         guard WCSession.isSupported() else { return }
@@ -28,7 +29,10 @@ extension WatchLink: WCSessionDelegate {
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
-    ) {}
+    ) {
+        // Catch up on a schedule edited on the Watch while this app was closed.
+        storeSchedule(from: session.receivedApplicationContext)
+    }
 
     func sessionDidBecomeInactive(_ session: WCSession) {}
 
@@ -37,16 +41,26 @@ extension WatchLink: WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        guard let payload = userInfo["episode"] as? [String: Any],
-              let episode = StressEpisode.from(dictionary: payload)
-        else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.episodeStore?.add(episode)
+        if let payload = userInfo["episode"] as? [String: Any],
+           let episode = StressEpisode.from(dictionary: payload) {
+            DispatchQueue.main.async { [weak self] in
+                self?.episodeStore?.add(episode)
+            }
+        }
+        if let payload = userInfo["summary"] as? [String: Any],
+           let summary = MonitoringSummary.from(dictionary: payload) {
+            DispatchQueue.main.async { [weak self] in
+                self?.summaryStore?.add(summary)
+            }
         }
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        guard let data = applicationContext["schedule"] as? Data,
+        storeSchedule(from: applicationContext)
+    }
+
+    private func storeSchedule(from context: [String: Any]) {
+        guard let data = context["schedule"] as? Data,
               let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
         else { return }
         DispatchQueue.main.async {

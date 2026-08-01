@@ -19,9 +19,22 @@ struct RootView: View {
 struct TodayView: View {
     @EnvironmentObject private var health: HealthDashboardModel
     @EnvironmentObject private var episodeStore: EpisodeStore
+    @EnvironmentObject private var summaryStore: SummaryStore
 
     private var todayEpisodes: [StressEpisode] {
         episodeStore.episodes(onSameDayAs: Date())
+    }
+
+    private var todaySummaries: [MonitoringSummary] {
+        summaryStore.summaries(onSameDayAs: Date())
+    }
+
+    private var todayMonitoredText: String {
+        let seconds = todaySummaries.reduce(0.0) { $0 + $1.endedAt.timeIntervalSince($1.startedAt) }
+        let readings = todaySummaries.reduce(0) { $0 + $1.sampleCount }
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        return "\(hours)h \(minutes)m monitored · \(readings) readings"
     }
 
     var body: some View {
@@ -62,6 +75,15 @@ struct TodayView: View {
                 }
 
                 Section("Today") {
+                    if todaySummaries.isEmpty {
+                        Text("No monitoring sessions recorded today. Summaries arrive from the Watch when a Work Mode session ends.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label(todayMonitoredText, systemImage: "waveform.path.ecg")
+                            .font(.subheadline)
+                            .foregroundStyle(.teal)
+                    }
                     if todayEpisodes.isEmpty {
                         Text("No stress episodes detected today.")
                             .foregroundStyle(.secondary)

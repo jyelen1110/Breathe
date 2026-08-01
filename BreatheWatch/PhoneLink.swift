@@ -26,6 +26,22 @@ final class PhoneLink: NSObject, ObservableObject {
         else { return }
         try? session.updateApplicationContext(["schedule": data])
     }
+
+    /// Mirrors a completed session summary to the iPhone.
+    func send(summary: MonitoringSummary) {
+        guard let session else { return }
+        session.transferUserInfo(["summary": summary.dictionaryRepresentation])
+    }
+
+    private func applyScheduleIfPresent(in context: [String: Any]) {
+        guard let data = context["schedule"] as? Data,
+              let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
+        else { return }
+        DispatchQueue.main.async {
+            schedule.save()
+            ScheduleManager.apply(schedule)
+        }
+    }
 }
 
 extension PhoneLink: WCSessionDelegate {
@@ -33,15 +49,13 @@ extension PhoneLink: WCSessionDelegate {
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
-    ) {}
+    ) {
+        // Catch up on a schedule the phone sent while this app was closed —
+        // the live delegate callback only fires for changes made while running.
+        applyScheduleIfPresent(in: session.receivedApplicationContext)
+    }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        guard let data = applicationContext["schedule"] as? Data,
-              let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
-        else { return }
-        DispatchQueue.main.async {
-            schedule.save()
-            ScheduleManager.apply(schedule)
-        }
+        applyScheduleIfPresent(in: applicationContext)
     }
 }

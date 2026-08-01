@@ -18,6 +18,9 @@ struct WatchRootView: View {
                     NavigationLink("Settings") {
                         WatchSettingsView()
                     }
+                    NavigationLink("Diagnostics") {
+                        DiagnosticsView()
+                    }
                 }
             }
             .navigationTitle("Breathe")

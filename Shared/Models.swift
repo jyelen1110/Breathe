@@ -55,6 +55,38 @@ struct StressEpisode: Codable, Identifiable, Equatable {
     }
 }
 
+/// One completed Work Mode session, recorded on the Watch and mirrored to the
+/// iPhone so the app can show proof of what it monitored.
+struct MonitoringSummary: Codable, Identifiable, Equatable {
+    var id: UUID
+    var startedAt: Date
+    var endedAt: Date
+    var sampleCount: Int
+
+    var dictionaryRepresentation: [String: Any] {
+        [
+            "id": id.uuidString,
+            "startedAt": startedAt.timeIntervalSince1970,
+            "endedAt": endedAt.timeIntervalSince1970,
+            "samples": sampleCount,
+        ]
+    }
+
+    static func from(dictionary dict: [String: Any]) -> MonitoringSummary? {
+        guard let idString = dict["id"] as? String,
+              let id = UUID(uuidString: idString),
+              let started = dict["startedAt"] as? TimeInterval,
+              let ended = dict["endedAt"] as? TimeInterval
+        else { return nil }
+        return MonitoringSummary(
+            id: id,
+            startedAt: Date(timeIntervalSince1970: started),
+            endedAt: Date(timeIntervalSince1970: ended),
+            sampleCount: dict["samples"] as? Int ?? 0
+        )
+    }
+}
+
 /// User-configured monitoring window, shared between iPhone (editing UI) and
 /// Watch (reminder notifications + auto-stop). Synced via WatchConnectivity
 /// application context; each device also persists its own copy.
