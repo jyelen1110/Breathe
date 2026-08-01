@@ -37,12 +37,15 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "${{ secrets.APPSTORE_P8 }}" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      # Sign the archive with the cloud-managed DISTRIBUTION identity directly.
-      # Default automatic signing would mint a throwaway development certificate
-      # on every ephemeral runner (the account eventually hits Apple's cert cap),
-      # and a fully unsigned archive loses the HealthKit entitlement the watch
-      # app's workout-processing background mode requires.
-      - name: Archive (distribution cloud signing)
+      # Cloud signing mints a throwaway 'Created via API' development certificate
+      # on every ephemeral runner; prune the previous runs' corpses first so the
+      # account never hits Apple's certificate cap.
+      - name: Prune stale CI development certificates
+        run: |
+          pip3 install --quiet pyjwt cryptography
+          python3 ci/prune_dev_certs.py
+
+      - name: Archive (cloud-managed signing)
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -56,7 +59,6 @@ jobs:
             -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             | tail -n 80
 
