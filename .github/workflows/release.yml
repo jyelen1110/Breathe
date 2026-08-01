@@ -42,8 +42,9 @@ jobs:
       # account never hits Apple's certificate cap.
       - name: Prune stale CI development certificates
         run: |
-          pip3 install --quiet pyjwt cryptography
-          python3 ci/prune_dev_certs.py
+          python3 -m venv /tmp/prune-venv
+          /tmp/prune-venv/bin/pip install --quiet pyjwt cryptography
+          /tmp/prune-venv/bin/python ci/prune_dev_certs.py
 
       - name: Archive (cloud-managed signing)
         run: |
