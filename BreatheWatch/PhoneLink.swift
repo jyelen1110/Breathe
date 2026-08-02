@@ -33,6 +33,16 @@ final class PhoneLink: NSObject, ObservableObject {
         session.transferUserInfo(["summary": summary.dictionaryRepresentation])
     }
 
+    /// Ships the calibration CSVs to the iPhone. Whole files transfer each time
+    /// and replace by name on the phone, so repeated sends are harmless.
+    func sendCaptureFiles() {
+        guard let session, session.activationState == .activated else { return }
+        CaptureLogger.shared.flush()
+        for url in CaptureLogger.shared.allFiles {
+            session.transferFile(url, metadata: ["name": url.lastPathComponent])
+        }
+    }
+
     private func applyScheduleIfPresent(in context: [String: Any]) {
         guard let data = context["schedule"] as? Data,
               let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)

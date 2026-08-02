@@ -9,6 +9,8 @@ struct RootView: View {
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             ScheduleView()
                 .tabItem { Label("Schedule", systemImage: "calendar.badge.clock") }
+            CaptureView()
+                .tabItem { Label("Data", systemImage: "tray.and.arrow.down") }
             GuideView()
                 .tabItem { Label("Guide", systemImage: "book") }
         }

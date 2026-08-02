@@ -39,7 +39,33 @@ final class AlertCenter: NSObject {
             actions: [startWork],
             intentIdentifiers: []
         )
-        center.setNotificationCategories([category, workReminder])
+
+        let probeYes = UNNotificationAction(identifier: "PROBE_YES", title: "Yes — feeling it", options: [])
+        let probeNo = UNNotificationAction(identifier: "PROBE_NO", title: "No", options: [])
+        let probe = UNNotificationCategory(
+            identifier: "SURGE_PROBE",
+            actions: [probeYes, probeNo],
+            intentIdentifiers: []
+        )
+        center.setNotificationCategories([category, workReminder, probe])
+    }
+
+    /// Calibration-week check-in: asks whether a surge is happening right now.
+    func sendProbe(bpm: Int) {
+        WKInterfaceDevice.current().play(.notification)
+
+        let content = UNMutableNotificationContent()
+        content.title = "Quick check"
+        content.body = "Heart rate \(bpm) — are you feeling a surge right now?"
+        content.categoryIdentifier = "SURGE_PROBE"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "probe-\(Int(Date().timeIntervalSince1970))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     func notifyStress(episode: StressEpisode) {
@@ -80,6 +106,14 @@ extension AlertCenter: UNUserNotificationCenterDelegate {
             // Reminder tapped (either the action button or the notification body):
             // both open the app, so start monitoring right away.
             NotificationCenter.default.post(name: .workModeReminderTapped, object: nil)
+        } else if category == "SURGE_PROBE" {
+            if response.actionIdentifier == "PROBE_YES" || response.actionIdentifier == "PROBE_NO" {
+                NotificationCenter.default.post(
+                    name: .probeAnswered,
+                    object: nil,
+                    userInfo: ["feltIt": response.actionIdentifier == "PROBE_YES"]
+                )
+            }
         } else {
             NotificationCenter.default.post(
                 name: .stressAlertAction,
@@ -94,4 +128,5 @@ extension AlertCenter: UNUserNotificationCenterDelegate {
 extension Notification.Name {
     static let stressAlertAction = Notification.Name("stressAlertAction")
     static let workModeReminderTapped = Notification.Name("workModeReminderTapped")
+    static let probeAnswered = Notification.Name("probeAnswered")
 }

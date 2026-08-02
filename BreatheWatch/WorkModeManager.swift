@@ -2,6 +2,7 @@ import Foundation
 import HealthKit
 import CoreMotion
 import Combine
+import WatchKit
 
 /// Runs the continuous monitoring session ("Work Mode"): an HKWorkoutSession that
 /// streams heart rate every few seconds, combined with pedometer context, feeding
@@ -26,8 +27,16 @@ final class WorkModeManager: NSObject, ObservableObject {
     /// Heart-rate readings received in the current session — live proof the sensor works.
     @Published var sampleCount = 0
     @Published var lastSampleAt: Date?
+    /// Calibration-week counters shown on the watch home screen.
+    @Published var feltToday = 0
+    @Published var probesToday = 0
 
     private var sessionStartedAt: Date?
+    private var hrHistory: [(date: Date, bpm: Double)] = []
+    private var stepsHistory: [(date: Date, steps: Int)] = []
+    private var lastProbeAt: Date?
+    private var flushTimer: Timer?
+    private var transferTimer: Timer?
     /// Set when a stress alert fires; the root view observes this to offer breathing.
     @Published var pendingBreathingInvite: Bool = false
 
@@ -86,6 +95,13 @@ final class WorkModeManager: NSObject, ObservableObject {
                 lastSampleAt = nil
                 sessionStartedAt = Date()
                 status = .running
+                CaptureLogger.shared.logEvent("session_start", bpm: 0, steps: recentSteps)
+                flushTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+                    CaptureLogger.shared.flush()
+                }
+                transferTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+                    self?.phoneLink?.sendCaptureFiles()
+                }
             } catch {
                 status = .ended(reason: error.localizedDescription)
             }
@@ -93,6 +109,12 @@ final class WorkModeManager: NSObject, ObservableObject {
     }
 
     func stop() {
+        CaptureLogger.shared.logEvent("session_stop", bpm: currentHR, steps: recentSteps)
+        flushTimer?.invalidate()
+        flushTimer = nil
+        transferTimer?.invalidate()
+        transferTimer = nil
+        phoneLink?.sendCaptureFiles()
         if let started = sessionStartedAt {
             let summary = MonitoringSummary(
                 id: UUID(),
@@ -196,54 +218,81 @@ final class WorkModeManager: NSObject, ObservableObject {
         let fiveMinutesAgo = Date().addingTimeInterval(-300)
         pedometer.queryPedometerData(from: fiveMinutesAgo, to: Date()) { [weak self] data, _ in
             DispatchQueue.main.async {
-                self?.recentSteps = data?.numberOfSteps.intValue ?? 0
+                guard let self else { return }
+                let steps = data?.numberOfSteps.intValue ?? 0
+                self.recentSteps = steps
+                self.stepsHistory.append((Date(), steps))
+                let cutoff = Date().addingTimeInterval(-1200)
+                self.stepsHistory.removeAll { $0.date < cutoff }
+                if self.status == .running {
+                    CaptureLogger.shared.logSteps(steps)
+                }
             }
         }
     }
 
     // MARK: - Detection
 
+    // Calibration week: no stress alerts, no auto-breathing. Record everything,
+    // and occasionally probe with a yes/no check-in when heart rate rises faster
+    // than movement explains — the answers become labeled training data.
     private func handleHeartRate(bpm: Double) {
         DispatchQueue.main.async { [self] in
             currentHR = bpm
             sampleCount += 1
             lastSampleAt = Date()
-            let verdict = engine.process(
-                bpm: bpm,
-                at: Date(),
-                baselineHR: baselineHR,
-                stepsLastFiveMinutes: recentSteps
-            )
-            switch verdict {
-            case .calm:
-                verdictDescription = "Calm"
-            case .active:
-                verdictDescription = "Active"
-            case .elevated(let since):
-                let minutes = max(1, Int(Date().timeIntervalSince(since) / 60))
-                verdictDescription = "Elevated \(minutes)m"
-            case .alert(let signal):
-                verdictDescription = "Stress detected"
-                fireAlert(for: signal)
-            }
+            verdictDescription = "Recording"
+            CaptureLogger.shared.logHR(bpm)
+            hrHistory.append((Date(), bpm))
+            let cutoff = Date().addingTimeInterval(-900)
+            hrHistory.removeAll { $0.date < cutoff }
+            evaluateProbe()
         }
     }
 
-    private func fireAlert(for signal: DetectionEngine.StressSignal) {
-        let episode = StressEpisode(
-            id: UUID(),
-            startedAt: signal.startedAt,
-            detectedAt: signal.detectedAt,
-            averageHR: signal.averageHR,
-            baselineHR: signal.baselineHR,
-            stepsLastFiveMinutes: signal.stepsLastFiveMinutes,
-            resolution: nil
-        )
-        lastAlert = episode
-        pendingBreathingInvite = true
-        episodeStore?.add(episode)
-        phoneLink?.send(episode: episode)
-        AlertCenter.shared.notifyStress(episode: episode)
+    private func evaluateProbe() {
+        let now = Date()
+        // Reference: median HR over the 1-10 minutes ago window (excludes the rise itself).
+        let baselineSamples = hrHistory
+            .filter { $0.date < now.addingTimeInterval(-60) && $0.date > now.addingTimeInterval(-600) }
+            .map(\.bpm)
+        guard baselineSamples.count >= 24 else { return }
+
+        let recent = hrHistory.filter { $0.date >= now.addingTimeInterval(-30) }.map(\.bpm)
+        guard !recent.isEmpty else { return }
+        let recentMean = recent.reduce(0, +) / Double(recent.count)
+        let rise = recentMean - median(baselineSamples)
+
+        // Movement excuse: if stepping picked up versus ~10 minutes ago, the rise
+        // is probably physical, not adrenaline.
+        guard let past = stepsHistory.last(where: { $0.date <= now.addingTimeInterval(-480) }) else { return }
+        let movementIncrease = recentSteps - past.steps
+
+        guard rise >= 12, movementIncrease <= 60 else { return }
+        if let last = lastProbeAt, now.timeIntervalSince(last) < 1200 { return }
+        guard probesToday < 12 else { return }
+
+        lastProbeAt = now
+        probesToday += 1
+        CaptureLogger.shared.logEvent("probe_sent", bpm: recentMean, steps: recentSteps)
+        AlertCenter.shared.sendProbe(bpm: Int(recentMean))
+    }
+
+    private func median(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        return sorted[sorted.count / 2]
+    }
+
+    /// The user tapped "I feel it" — the strongest possible label.
+    func recordFelt() {
+        feltToday += 1
+        CaptureLogger.shared.logEvent("felt", bpm: currentHR, steps: recentSteps)
+        WKInterfaceDevice.current().play(.success)
+    }
+
+    /// The user answered a probe notification.
+    func recordProbeAnswer(feltIt: Bool) {
+        CaptureLogger.shared.logEvent(feltIt ? "probe_yes" : "probe_no", bpm: currentHR, steps: recentSteps)
     }
 
     func resolveLastAlert(_ resolution: StressEpisode.Resolution) {

@@ -12,6 +12,18 @@ struct WatchRootView: View {
                     statusLine
                     workModeButton
 
+                    if workMode.status == .running {
+                        Button {
+                            workMode.recordFelt()
+                        } label: {
+                            Label("I feel it", systemImage: "bolt.fill")
+                        }
+                        .tint(.orange)
+                        Text("\(workMode.feltToday) logged today")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
                     NavigationLink("Breathe now") {
                         BreathingView()
                     }
@@ -28,11 +40,12 @@ struct WatchRootView: View {
                 BreathingView()
             }
         }
-        .onChange(of: workMode.pendingBreathingInvite) { _, invited in
-            if invited { showBreathing = true }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .workModeReminderTapped)) { _ in
             workMode.start()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .probeAnswered)) { note in
+            guard let feltIt = note.userInfo?["feltIt"] as? Bool else { return }
+            workMode.recordProbeAnswer(feltIt: feltIt)
         }
         .onReceive(NotificationCenter.default.publisher(for: .stressAlertAction)) { note in
             guard let action = note.userInfo?["action"] as? String else { return }
@@ -87,7 +100,7 @@ struct WatchRootView: View {
                 Text("Starting sensors…")
                     .foregroundStyle(.secondary)
             case .running:
-                Label(workMode.verdictDescription, systemImage: "waveform.path.ecg")
+                Label("Recording · \(workMode.sampleCount) readings", systemImage: "waveform.path.ecg")
                     .foregroundStyle(.teal)
             case .ended(let reason):
                 Text(reason ?? "Session ended")

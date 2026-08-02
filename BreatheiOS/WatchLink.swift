@@ -59,6 +59,24 @@ extension WatchLink: WCSessionDelegate {
         storeSchedule(from: applicationContext)
     }
 
+    static var captureDirectory: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("capture", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func session(_ session: WCSession, didReceive file: WCSessionFile) {
+        // The incoming temp file is deleted after this callback — copy synchronously.
+        let name = (file.metadata?["name"] as? String) ?? file.fileURL.lastPathComponent
+        let destination = Self.captureDirectory.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: destination)
+        try? FileManager.default.copyItem(at: file.fileURL, to: destination)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .captureUpdated, object: nil)
+        }
+    }
+
     private func storeSchedule(from context: [String: Any]) {
         guard let data = context["schedule"] as? Data,
               let schedule = try? JSONDecoder().decode(MonitoringSchedule.self, from: data)
@@ -72,4 +90,5 @@ extension WatchLink: WCSessionDelegate {
 
 extension Notification.Name {
     static let scheduleSynced = Notification.Name("scheduleSynced")
+    static let captureUpdated = Notification.Name("captureUpdated")
 }
