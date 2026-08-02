@@ -2,6 +2,12 @@
 
 An Apple Watch app that detects early signs of workday stress in near-real-time and nudges you to intervene before it builds.
 
+> **Current phase (2026-08): calibration week.** Automatic stress alerts are disabled while
+> the app records labeled data to build an adrenaline-surge detector suited to an
+> on-your-feet workday. See [CLAUDE.md](CLAUDE.md), [docs/STATUS.md](docs/STATUS.md) and
+> [docs/DATA-ANALYSIS.md](docs/DATA-ANALYSIS.md). The description below covers the general
+> system; detection specifics are being redesigned from the calibration data.
+
 ## How it works
 
 - **Work Mode** (on the Watch) runs a continuous sensor session that reads your heart rate every few seconds.
