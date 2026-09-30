@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import WatchConnectivity
 
 /// Self-check screen: shows whether reminders are actually queued, whether
 /// notifications are permitted, and whether heart-rate readings are arriving —
@@ -38,6 +39,11 @@ struct DiagnosticsView: View {
                 row("Baseline", "\(Int(workMode.baselineHR)) bpm")
                 row("Health", healthText)
                 row("Workout write", workMode.workoutWriteDescription)
+            }
+
+            Section("Data sync") {
+                row("Capture files on watch", "\(CaptureLogger.shared.allFiles.count)")
+                row("Transfers pending", "\(WCSession.isSupported() ? WCSession.default.outstandingFileTransfers.count : 0)")
             }
         }
         .navigationTitle("Diagnostics")
