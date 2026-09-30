@@ -33,14 +33,32 @@ final class PhoneLink: NSObject, ObservableObject {
         session.transferUserInfo(["summary": summary.dictionaryRepresentation])
     }
 
-    /// Ships the calibration CSVs to the iPhone. Whole files transfer each time
-    /// and replace by name on the phone, so repeated sends are harmless.
+    /// Ships the calibration CSVs to the iPhone — but only files that grew since
+    /// their last confirmed delivery, and never ones already queued. The original
+    /// resend-everything design flooded the WatchConnectivity queue once enough
+    /// days accumulated (~Aug 22), silently stalling all transfers.
+    private let deliveredKey = "deliveredCaptureBytes.v1"
+
     func sendCaptureFiles() {
         guard let session, session.activationState == .activated else { return }
         CaptureLogger.shared.flush()
+
+        let delivered = (UserDefaults.standard.dictionary(forKey: deliveredKey) as? [String: Int]) ?? [:]
+        let queued = Set(session.outstandingFileTransfers.map { $0.file.fileURL.lastPathComponent })
+
         for url in CaptureLogger.shared.allFiles {
-            session.transferFile(url, metadata: ["name": url.lastPathComponent])
+            let name = url.lastPathComponent
+            guard !queued.contains(name) else { continue }
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int).flatMap { $0 } ?? 0
+            if let sentBytes = delivered[name], sentBytes >= size, size > 0 { continue }
+            session.transferFile(url, metadata: ["name": name, "size": size])
         }
+    }
+
+    private func markDelivered(name: String, size: Int) {
+        var delivered = (UserDefaults.standard.dictionary(forKey: deliveredKey) as? [String: Int]) ?? [:]
+        delivered[name] = max(delivered[name] ?? 0, size)
+        UserDefaults.standard.set(delivered, forKey: deliveredKey)
     }
 
     private func applyScheduleIfPresent(in context: [String: Any]) {
@@ -63,6 +81,23 @@ extension PhoneLink: WCSessionDelegate {
         // Catch up on a schedule the phone sent while this app was closed —
         // the live delegate callback only fires for changes made while running.
         applyScheduleIfPresent(in: session.receivedApplicationContext)
+
+        // Recover from the pre-fix flood: a massively backed-up transfer queue
+        // never drains, so clear it and let sendCaptureFiles re-enqueue only
+        // what's actually undelivered.
+        if session.outstandingFileTransfers.count > 30 {
+            session.outstandingFileTransfers.forEach { $0.cancel() }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.sendCaptureFiles()
+        }
+    }
+
+    func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+        guard error == nil else { return }
+        let name = (fileTransfer.file.metadata?["name"] as? String) ?? fileTransfer.file.fileURL.lastPathComponent
+        let size = (fileTransfer.file.metadata?["size"] as? Int) ?? 0
+        markDelivered(name: name, size: size)
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {

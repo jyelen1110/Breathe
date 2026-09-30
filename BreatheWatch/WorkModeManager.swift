@@ -93,6 +93,11 @@ final class WorkModeManager: NSObject, ObservableObject {
                 scheduleAutoStopIfNeeded()
                 sampleCount = 0
                 lastSampleAt = nil
+                // Reset per-session counters: probesToday previously only reset on
+                // process relaunch, so the 12-probe cap became a lifetime cap and
+                // probes went silent for days at a time.
+                probesToday = 0
+                feltToday = 0
                 sessionStartedAt = Date()
                 status = .running
                 CaptureLogger.shared.logEvent("session_start", bpm: 0, steps: recentSteps)
