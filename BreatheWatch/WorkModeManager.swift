@@ -35,6 +35,7 @@ final class WorkModeManager: NSObject, ObservableObject {
     private var hrHistory: [(date: Date, bpm: Double)] = []
     private var stepsHistory: [(date: Date, steps: Int)] = []
     private var lastProbeAt: Date?
+    private var riseSustainedSince: Date?
     private var flushTimer: Timer?
     private var transferTimer: Timer?
     /// Set when a stress alert fires; the root view observes this to offer breathing.
@@ -273,10 +274,21 @@ final class WorkModeManager: NSObject, ObservableObject {
         guard let past = stepsHistory.last(where: { $0.date <= now.addingTimeInterval(-480) }) else { return }
         let movementIncrease = recentSteps - past.steps
 
-        guard rise >= 12, movementIncrease <= 60 else { return }
+        // Tuned from the Aug-Sep labeled data: +12 instantaneous produced ~9 "No"
+        // answers per "Yes". Real surges rose >= ~15 bpm and held for minutes, so
+        // require the rise to SUSTAIN 90 seconds before probing.
+        guard rise >= 15, movementIncrease <= 60 else {
+            riseSustainedSince = nil
+            return
+        }
+        let since = riseSustainedSince ?? now
+        riseSustainedSince = since
+        guard now.timeIntervalSince(since) >= 90 else { return }
+
         if let last = lastProbeAt, now.timeIntervalSince(last) < 1200 { return }
         guard probesToday < 12 else { return }
 
+        riseSustainedSince = nil
         lastProbeAt = now
         probesToday += 1
         CaptureLogger.shared.logEvent("probe_sent", bpm: recentMean, steps: recentSteps)
