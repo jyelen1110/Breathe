@@ -1,11 +1,30 @@
-# Status — as of 2026-08-02
+# Status — as of 2026-09-30
 
 ## Where the project is
 
-**Calibration week is live.** The latest TestFlight build (uploaded 2026-08-02) records
-everything during Work Mode and collects ground-truth surge labels. No stress alerts fire;
-breathing is manual-only. This is deliberate: the original detector was built for the wrong
-problem (see below), so we're measuring before automating again.
+**Calibration is still running — and mostly recovered from two bugs.** Jason has kept
+using Work Mode through late September (probes fired as recently as Sep 29), but the
+exportable data stopped at Aug 22 because the watch→phone file transfer flooded its own
+queue (resend-everything design). Fixed 2026-09-30 (PR #1, TestFlight build uploaded):
+delivery-tracked transfers, flood recovery on activation, probe cap made per-session
+(was accidentally per-app-lifetime, which silenced probes Aug 7–22), and Diagnostics
+now shows files-on-watch / pending-transfer counts.
+
+**Immediate next step:** after Jason updates and opens both apps, the ~6-week backlog
+(late Aug–Sep, including his recent probe Yes/No answers) should drain to the phone's
+Data tab → he re-exports → run the full analysis (see DATA-ANALYSIS.md).
+
+**Findings from the Aug 4–22 data already analyzed** (10 shifts, ~4.2h & ~3k HR readings
+each; export was at `H:\My Drive\Untitled folder`):
+- Daily median working HR varies 72–87 bpm; peaks 97–124.
+- Probe heuristic (+12 bpm unexplained rise) is too twitchy: 7/7 answered probes = "No",
+  fired on sub-minute bumps to 85–99 bpm that self-settle.
+- Only 2 "felt" taps: one looks like a button test; the Aug 11 one had a completely FLAT
+  HR (66–72, below that day's median) — first evidence his felt surges may not show in
+  heart rate. Jason reports recent probes (late Sep) DID coincide with feeling it — his
+  recent Yes/No answers are the first real positives, trapped in the backlog until export.
+
+## Original calibration design (2026-08-02 build)
 
 ## What works, verified end-to-end
 
